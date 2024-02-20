@@ -1,0 +1,60 @@
+import org.zanko.algoritmy.nivo2.ApplicationStatusResponse;
+import org.zanko.algoritmy.nivo2.Client;
+import org.zanko.algoritmy.nivo2.Handler;
+import org.zanko.algoritmy.nivo2.Response;
+
+import java.time.Duration;
+import java.time.LocalTime;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+
+public class HeaderImpl implements Handler {
+
+    private static final long TIMEOUT = 1500L;
+    private static int retriesCount = 0;
+
+    @Override
+    public ApplicationStatusResponse performOperation(String id) {
+
+        Executor executor = Executors.newFixedThreadPool(2);
+        Client client = new ClientImpl();
+
+        try {
+            Thread.sleep(TIMEOUT);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        CompletableFuture<Response> future1 = CompletableFuture.supplyAsync(() -> client.getApplicationStatus1(id), executor);
+        CompletableFuture<Response> future2 = CompletableFuture.supplyAsync(() -> client.getApplicationStatus2(id), executor);
+
+        CompletableFuture<Object> anyOfFuture = CompletableFuture.anyOf(future1, future2);
+
+        CompletableFuture<Object> exceptionally = anyOfFuture.exceptionally(Response.Failure::new);
+
+        LocalTime lastRequestLocalTime = LocalTime.now();
+        Duration lastRequestTime = getLastRequestTime(lastRequestLocalTime);
+
+        try {
+            Response response = (Response) exceptionally.get();
+            if (response instanceof Response.Success) {
+                return new ApplicationStatusResponse.Success(id, "Success");
+            }
+            if (response instanceof Response.Failure) {
+                return new ApplicationStatusResponse.Failure(lastRequestTime, getIncrementRetriesCount());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private Duration getLastRequestTime(LocalTime lastRequestLocalTime) {
+        return Duration.between(lastRequestLocalTime, LocalTime.now());
+    }
+
+    public static int getIncrementRetriesCount() {
+        return retriesCount++;
+    }
+}
